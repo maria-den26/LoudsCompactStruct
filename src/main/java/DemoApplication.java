@@ -54,21 +54,23 @@ public class DemoApplication {
                 System.out.printf("  Слова Trie с префиксом '%s': %s%n",
                         prefix, wordsWithPrefix);
             }
-            /*if (loudsHas) {
+            if (loudsHas) {
                 List<String> wordsWithPrefix = louds.getWordsWithPrefix(prefix);
                 System.out.printf("  Слова LOADS с префиксом '%s': %s%n",
                         prefix, wordsWithPrefix);
-            }*/
-
+            }
         }
 
-        // Анализ памяти
-        System.out.println("\nАНАЛИЗ ПАМЯТИ (ориентировочный):");
-        analyzeMemory(louds, trie);
 
         // Запуск бенчмарков
         System.out.println("\nЗАПУСК БЕНЧМАРКОВ:");
-        runBenchmarks();
+        //runBenchmarks();
+        System.out.println("\nВремя поиска слов:");
+        searchTimeTest();
+        System.out.println("\nВремя поиска по префиксу:");
+        prefixTimeTest();
+        System.out.println("\nВремя создания:");
+        buildTimeAndMemoryTest();
     }
 
     public static TrieLouds generateTestLouds(List<String> words)
@@ -125,52 +127,6 @@ public class DemoApplication {
             word.append(letters.charAt(random.nextInt(letters.length())));
         }
         return word.toString();
-    }
-
-    /**
-     * Ориентировочный анализ памяти
-     */
-    private static void analyzeMemory(TrieLouds loudsTrie, Trie classicTrie) {
-        // Ориентировочный расчет для LOUDS Trie
-        int loudsNodes = loudsTrie.getNodeCount();
-        int loudsBits = loudsTrie.getBitLength();
-        int loudsBytesForBits = loudsBits / 8 + 1;
-        int loudsBytesForData = loudsNodes * 2; // char + boolean (символ узла и флаг конца слова)
-
-        // Таблицы rank/select
-        int loudsTableBytes = 0;
-        if (loudsTrie.rank1Table != null) {
-            loudsTableBytes += loudsTrie.rank1Table.length * 4;
-        }
-        if (loudsTrie.select1Table != null) {
-            loudsTableBytes += loudsTrie.select1Table.length * 4;
-        }
-        if (loudsTrie.select0Table != null) {
-            loudsTableBytes += loudsTrie.select0Table.length * 4;
-        }
-
-        int totalLoudsBytes = loudsBytesForBits + loudsBytesForData + loudsTableBytes;
-
-        // Ориентировочный расчет для обычного Trie
-        int trieNodes = classicTrie.getNodeCount();
-        // Каждый узел: HashMap (~48 байт) + boolean (1 байт) + ссылки(4 байта на ссылку)
-        int trieBytesPerNode = 50; // консервативная оценка
-        int totalTrieBytes = trieNodes * trieBytesPerNode;
-
-        System.out.printf("LOUDS Trie:%n");
-        System.out.printf("  Узлов: %d%n", loudsNodes);
-        System.out.printf("  Битов: %d (~%d байт)%n", loudsBits, loudsBytesForBits);
-        System.out.printf("  Таблицы rank/select: ~%d байт%n", loudsTableBytes);
-        System.out.printf("  ОБЩАЯ ОЦЕНКА: ~%d байт (~%.2f KB)%n",
-                totalLoudsBytes, totalLoudsBytes / 1024.0);
-
-        System.out.printf("Обычный Trie:%n");
-        System.out.printf("  Узлов: %d%n", trieNodes);
-        System.out.printf("  ОБЩАЯ ОЦЕНКА: ~%d байт (~%.2f KB)%n",
-                totalTrieBytes, totalTrieBytes / 1024.0);
-
-        System.out.printf("ЭКОНОМИЯ LOUDS: %.1f%%%n",
-                (1 - (double)totalLoudsBytes / totalTrieBytes) * 100);
     }
 
     /**
@@ -240,9 +196,6 @@ public class DemoApplication {
         System.out.printf("  Отношение скоростей (Trie/LOUDS): %.2fx%n",
                 (double)loudsSearchTime / trieSearchTime);
 
-        // Анализ памяти для бенчмарка
-        System.out.println("\nАНАЛИЗ ПАМЯТИ ДЛЯ БЕНЧМАРКА:");
-        analyzeMemory(benchmarkLouds, benchmarkTrie);
 
         // Дополнительный тест: поиск по префиксу
         System.out.println("\nБЕНЧМАРК ПОИСКА ПО ПРЕФИКСУ (500 префиксов):");
@@ -275,4 +228,175 @@ public class DemoApplication {
         System.out.printf("Обычный Trie: %d ms (найдено: %d)%n", triePrefixTime, triePrefixFound);
     }
 
+    private static void searchTimeTest()
+    {
+        // Генерация тестовых данных
+        List<String> benchmarkWords = generateWords(100000, 3, 10);
+
+        int[] iterCnt = {5000, 7500, 10000, 25000, 50000, 75000, 100000};
+        for (int i:iterCnt){
+
+            List<String> searchWords = new ArrayList<>();
+            //int testsize = i / 10;
+            //int testsize = 500;
+            int testsize = 1000;
+
+            // Берем слова для поиска (50% из вставленных, 50% случайных)
+            Random random = new Random(42);
+            for (int j = 0; j < testsize/2; j++) {
+                searchWords.add(benchmarkWords.get(random.nextInt(benchmarkWords.size())));
+            }
+            for (int j = 0; j < testsize/2; j++) {
+                searchWords.add(generateRandomWord(random, 3, 10));
+            }
+
+            // Создаем структуры
+            TrieLouds benchmarkLouds = TrieLouds.buildFromWordList(benchmarkWords.subList(0,i));
+
+            Trie benchmarkTrie = new Trie();
+            for (String word : benchmarkWords.subList(0,i)) {
+                benchmarkTrie.insert(word);
+            }
+
+            // Поиск в LOUDS Trie
+            long startTime = System.currentTimeMillis();
+            int loudsFound = 0;
+            for (String word : searchWords) {
+                if (benchmarkLouds.search(word)) {
+                    loudsFound++;
+                }
+            }
+            long loudsSearchTime = System.currentTimeMillis() - startTime;
+
+            // Поиск в обычном Trie
+            startTime = System.currentTimeMillis();
+            int trieFound = 0;
+            for (String word : searchWords) {
+                if (benchmarkTrie.search(word)) {
+                    trieFound++;
+                }
+            }
+            long trieSearchTime = System.currentTimeMillis() - startTime;
+            System.out.printf("| Среднее время поиска (%d из %d слов)| %d ms | %d ms |%n", testsize, i, loudsSearchTime , trieSearchTime );
+
+        }
+
+    }
+
+    private static void prefixTimeTest()
+    {
+        // Генерация тестовых данных
+        List<String> benchmarkWords = generateWords(100000, 3, 10);
+        List<String> prefixes = new ArrayList<>();
+
+        int testsize = 500;
+
+        // Берем префиксы для поиска
+        Random random = new Random(42);
+        for (int j = 0; j < testsize; j++) {
+            //prefixes.add(generateRandomWord(random, 2, 5));
+            // Выбираем случайное слово
+            String randomWord = benchmarkWords.get(random.nextInt(benchmarkWords.size()));
+            // Генерируем случайную длину префикса (от 1 до длины слова)
+            int minPrefixLength = 2;
+            int maxPrefixLength = randomWord.length() - 1 ; // максимум 3 символа
+            int prefixLength = minPrefixLength + random.nextInt(maxPrefixLength - minPrefixLength + 1);
+
+            // Добавляем префикс
+            prefixes.add(randomWord.substring(0, prefixLength));
+        }
+
+        int[] iterCnt = {5000, 7500, 10000, 25000, 50000, 75000, 100000};
+        for (int i:iterCnt){
+
+            // Создаем структуры
+            TrieLouds benchmarkLouds = TrieLouds.buildFromWordList(benchmarkWords.subList(0,i));
+
+            Trie benchmarkTrie = new Trie();
+            for (String word : benchmarkWords.subList(0,i)) {
+                benchmarkTrie.insert(word);
+            }
+
+            int cnt = 0;
+
+            // Поиск в LOUDS Trie
+            long startTime = System.currentTimeMillis();
+            for (String prefix : prefixes) {
+                boolean loudsHas = benchmarkLouds.startsWith(prefix);
+                if (loudsHas) {
+                    cnt++;
+                    List<String> wordsWithPrefix = benchmarkLouds.getWordsWithPrefix(prefix);
+                }
+            }
+            long loudsSearchTime = (System.currentTimeMillis() - startTime) ;// cnt;
+
+            cnt = 0;
+
+            // Поиск в обычном Trie
+            startTime = System.currentTimeMillis();
+            for (String prefix : prefixes) {
+                boolean trieHas = benchmarkTrie.startsWith(prefix);
+                if (trieHas) {
+                    cnt++;
+                    List<String> wordsWithPrefix = benchmarkTrie.getWordsWithPrefix(prefix);
+                }
+            }
+            long trieSearchTime = (System.currentTimeMillis() - startTime) ;// cnt ;
+            System.out.printf("| Среднее время поиска (%d префиксов, %d слов)| %d ms | %d ms |%n", cnt, i, loudsSearchTime , trieSearchTime );
+
+        }
+
+    }
+
+    private static void buildTimeAndMemoryTest() {
+        // Для сохранения ссылок, чтобы GC не удалил объекты
+        List<Object> keepAlive = new ArrayList<>();
+        List<String> benchmarkWords = generateWords(100_000, 3, 10);
+        int[] iterCnt = {5000, 7500, 10000, 25000, 50000, 75000, 100000};
+        System.out.println("| Количество слов | LOUDS: время (мс) | LOUDS: память (Кб) | Trie: время (мс) | Trie: память (Кб) |");
+        System.out.println("|:---------------:|:-----------------:|:------------------:|:----------------:|:-----------------:|");
+    
+        for (int i : iterCnt) {
+            // LOUDS
+            System.gc();
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            long memBefore = getUsedMemory();
+            long startTime = System.currentTimeMillis();
+            TrieLouds benchmarkLouds = TrieLouds.buildFromWordList(benchmarkWords.subList(0, i));
+            long buildTime = System.currentTimeMillis() - startTime;
+            long memAfter = getUsedMemory();
+            long loudsMemory = (memAfter - memBefore) / 1024;
+            keepAlive.add(benchmarkLouds);
+
+            // Trie
+            System.gc();
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            long memBeforeTrie = getUsedMemory();
+            long startTimeTrie = System.currentTimeMillis();
+            Trie benchmarkTrie = new Trie();
+            for (String word : benchmarkWords.subList(0, i)) {
+                benchmarkTrie.insert(word);
+            }
+            long buildTimeTrie = System.currentTimeMillis() - startTimeTrie;
+            long memAfterTrie = getUsedMemory();
+            long trieMemory = (memAfterTrie - memBeforeTrie) / 1024;
+            keepAlive.add(benchmarkTrie);
+    
+            System.out.printf("| %d | %d | %d | %d | %d |\n", i, buildTime, loudsMemory, buildTimeTrie, trieMemory);
+        }
+    }
+    
+    private static long getUsedMemory() {
+        Runtime runtime = Runtime.getRuntime();
+        runtime.gc();
+        return runtime.totalMemory() - runtime.freeMemory();
+    }
 }

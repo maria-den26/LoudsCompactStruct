@@ -85,12 +85,30 @@ public class TrieLouds extends BasicLouds {
         }
 
         int degree = degree(nodeNumber);
-        for (int i = 0; i < degree; i++) {
+        /*for (int i = 0; i < degree; i++) {
             int childNode = firstChild + i;
             if (getNodeChar(childNode) == ch) {
                 return childNode;
             }
+        }*/
+        // Бинарный поиск в отсортированном массиве детей
+        int left = 0;
+        int right = degree - 1;
+
+        while (left <= right) {
+            int mid = left + (right - left) / 2;
+            int childNode = firstChild + mid;
+            char childChar = getNodeChar(childNode);
+
+            if (childChar == ch) {
+                return childNode; // Нашли
+            } else if (childChar < ch) {
+                left = mid + 1; // Ищем справа
+            } else {
+                right = mid - 1; // Ищем слева
+            }
         }
+
         return -1;
     }
 
@@ -166,6 +184,41 @@ public class TrieLouds extends BasicLouds {
                 getAllWordsDFS(childNode, new StringBuilder(currentWord), words);
             }
         }
+    }
+
+    public List<String> getWordsWithPrefix(String prefix) {
+        List<String> result = new ArrayList<>();
+
+        // 1. Находим узел, соответствующий префиксу
+        int prefixNode = findNodeByPrefix(prefix);
+        if (prefixNode == -1) {
+            return result; // префикс не найден
+        }
+
+        // 2. Собираем все слова из поддерева
+        if (isWordEnd(prefixNode)) {
+            result.add(prefix); // сам префикс является словом
+        }
+
+        // 3. Рекурсивно обходим поддерево
+        StringBuilder currentWord = new StringBuilder(prefix);
+        getAllWordsDFS(prefixNode, currentWord, result);
+
+        return result;
+    }
+
+    private int findNodeByPrefix(String prefix) {
+        int currentNode = 0;
+
+        for (char ch : prefix.toCharArray()) {
+            int childNode = findChildByChar(currentNode, ch);
+            if (childNode == -1) {
+                return -1; // префикс не найден
+            }
+            currentNode = childNode;
+        }
+
+        return currentNode;
     }
 
     public static TrieLouds buildFromWordList(List<String> words) {
